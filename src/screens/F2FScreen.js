@@ -57,6 +57,9 @@ const F2FScreen = () => {
     const [smartResponses, setSmartResponses] = useState(null);
     const [inputText, setInputText] = useState("");
     const [isLoadingResponses, setIsLoadingResponses] = useState(false);
+    const [isSummaryModalVisible, setSummaryModalVisible] = useState(false);
+    const [summaryText, setSummaryText] = useState('');
+    const [isLoadingSummary, setIsLoadingSummary] = useState(false);
     const scrollViewRef = useRef(null);
     const [isUser, setIsUser] = useState(true);
     const [messages, setMessages] = useState([]);
@@ -602,17 +605,56 @@ const F2FScreen = () => {
         );
     };
 
+    const generateChatSummary = async () => {
+        if (!apiKey || messages.length === 0) return;
+
+        try {
+            setIsLoadingSummary(true);
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
+
+            const chatHistory = formatHistory(messages);
+            const prompt = `
+            Summarize the following conversation concisely but comprehensively. 
+            Include key points, main topics discussed, and any important conclusions or decisions made.
+            Keep emotional context where relevant.
+
+            Conversation:
+            ${chatHistory}
+            `;
+
+            const result = await model.generateContent(prompt);
+            setSummaryText(result.response.text());
+            setSummaryModalVisible(true);
+        } catch (error) {
+            console.error('Summary generation error:', error);
+            Alert.alert('Error', 'Failed to generate summary');
+        } finally {
+            setIsLoadingSummary(false);
+        }
+    };
+
     return (
         <LinearGradient
             colors={['rgb(1,114,178)', 'rgb(0,22,69)']}
             style={styles.container}
         >
-            <TouchableOpacity
-                style={styles.settingsButton}
-                onPress={() => setModalVisible(true)}
-            >
-                <Icon name="cog" size={24} color="#fff" />
-            </TouchableOpacity>
+            <View style={styles.headerButtons}>
+                <TouchableOpacity
+                    style={styles.settingsButton}
+                    onPress={() => setModalVisible(true)}
+                >
+                    <Icon name="cog" size={24} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.summaryButton}
+                    onPress={generateChatSummary}
+                    disabled={messages.length === 0 || isLoadingSummary}
+                >
+                    <Icon name="file-text-o" size={24} color="#fff" />
+                    {isLoadingSummary && <ActivityIndicator style={styles.summaryLoader} color="#fff" size="small" />}
+                </TouchableOpacity>
+            </View>
             <ScrollView
                 ref={scrollViewRef}
                 contentContainerStyle={stylesChat.chatContainer}
@@ -771,6 +813,26 @@ const F2FScreen = () => {
                 </View>
             </Modal>
 
+            <Modal
+                isVisible={isSummaryModalVisible}
+                onBackdropPress={() => setSummaryModalVisible(false)}
+                onBackButtonPress={() => setSummaryModalVisible(false)}
+                backdropTransitionOutTiming={0}
+                style={{ margin: 20 }}
+            >
+                <View style={modalStyles.summaryModalContainer}>
+                    <Text style={modalStyles.summaryModalTitle}>Chat Summary</Text>
+                    <ScrollView style={modalStyles.summaryScrollView}>
+                        <Text style={modalStyles.summaryText}>{summaryText}</Text>
+                    </ScrollView>
+                    <TouchableOpacity
+                        style={modalStyles.closeSummaryButton}
+                        onPress={() => setSummaryModalVisible(false)}
+                    >
+                        <Text style={modalStyles.buttonText}>Close</Text>
+                    </TouchableOpacity>
+                </View>
+            </Modal>
 
         </LinearGradient>
     );
@@ -893,6 +955,32 @@ const styles = StyleSheet.create({
         fontSize: 14,
         marginBottom: 10,
         textAlign: 'center',
+    },
+    headerButtons: {
+        flexDirection: 'row',
+        position: 'absolute',
+        top: 5,
+        left: 5,
+        zIndex: 1,
+    },
+    settingsButton: {
+        backgroundColor: 'rgba(1,114,178,0.8)',
+        borderRadius: 50,
+        padding: 10,
+        elevation: 5,
+        margin: 5,
+    },
+    summaryButton: {
+        backgroundColor: 'rgba(1,114,178,0.8)',
+        borderRadius: 50,
+        padding: 10,
+        elevation: 5,
+        margin: 5,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    summaryLoader: {
+        marginLeft: 5,
     },
 });
 
@@ -1028,12 +1116,14 @@ const modalStyles = StyleSheet.create({
         backgroundColor: 'white',
         padding: 20,
         borderRadius: 10,
+        maxHeight: '80%',
     },
     modalTitle: {
         fontSize: 20,
         fontWeight: 'bold',
         color: 'rgb(1,114,178)',
-        marginBottom: 10,
+        marginBottom: 15,
+        textAlign: 'center',
     },
     modalDescription: {
         color: '#666',
@@ -1070,9 +1160,33 @@ const modalStyles = StyleSheet.create({
         minWidth: 80,
         alignItems: 'center',
     },
-    buttonText: {
-        color: 'white',
+    summaryModalContainer: {
+        backgroundColor: 'white',
+        padding: 20,
+        borderRadius: 10,
+        maxHeight: '80%',
+    },
+    summaryModalTitle: {
+        fontSize: 20,
         fontWeight: 'bold',
+        color: 'rgb(1,114,178)',
+        marginBottom: 15,
+        textAlign: 'center',
+    },
+    summaryScrollView: {
+        maxHeight: '80%',
+        marginBottom: 15,
+    },
+    summaryText: {
+        fontSize: 16,
+        color: '#333',
+        lineHeight: 24,
+    },
+    closeSummaryButton: {
+        backgroundColor: 'rgb(1,114,178)',
+        padding: 12,
+        borderRadius: 8,
+        alignItems: 'center',
     },
 });
 
