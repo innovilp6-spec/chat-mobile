@@ -82,6 +82,7 @@ android {
         versionCode 1
         versionName "1.0"
     }
+    
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -89,7 +90,14 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release { 
+            storeFile file('your_key_name.keystore')
+            storePassword 'omnichat_rni'
+            keyAlias 'your_key_alias'
+            keyPassword 'omnichat_rni'
+        }
     }
+
     buildTypes {
         debug {
             signingConfig signingConfigs.debug

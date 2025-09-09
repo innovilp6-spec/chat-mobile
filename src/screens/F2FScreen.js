@@ -9,7 +9,8 @@ import {
     TextInput,
     Animated,
     ActivityIndicator,
-    Platform
+    Platform,
+    PermissionsAndroid
 } from 'react-native';
 import 'react-native-get-random-values';
 import Icon from "react-native-vector-icons/FontAwesome";
@@ -21,32 +22,14 @@ import { LoudnessEnhancer } from '../LoudnessEnhancer';
 import Voice from '@react-native-voice/voice';
 import Tts from 'react-native-tts';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-// import { v4 as uuidv4 } from "uuid";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Modal from 'react-native-modal';
 import RNFS from "react-native-fs";
-import { sERPrompt } from "../utils/prompts";
-import { Audio } from 'react-native-compressor';
-import { Recorder } from '@react-native-community/audio-toolkit';
 import { showToastInfo } from '../utils/toasts';
 import { nanoid } from 'nanoid';
-const API_KEY2 = "AIzaSyCmyRnnYcyZnc-JW4vmuJX9LjSqwpH4iPM";
-const API_KEY = "AIzaSyAHC8t6u8D7i - apswYjwiHc - Ho3zSfMxa0";
+import { useDispatch, useSelector } from 'react-redux';
+import { translateText } from '../store/slices/translationSlice';
 
-const OPTIMAL_CONFIG = {
-    model: "gemini-1.5-flash",
-    compression: {
-        maxFileSize: 200, // KB
-        bitrate: 64,
-        sampleRate: 22050
-    },
-    rateLimit: {
-        requestsPerMinute: 12,
-        delayBetweenRequests: 5000
-    }
-};
-
-let recorder;
 
 const F2FScreen = () => {
     const [isListening, setIsListening] = useState(false);
@@ -71,119 +54,131 @@ const F2FScreen = () => {
     const [tempApiKey, setTempApiKey] = useState('');
     const [apiKeyError, setApiKeyError] = useState(null);
     const [filePath, setFilePath] = useState("");
-    const startListeningWithNoiseSuppressor = async () => {
+    const dispatch = useDispatch();
+    const translations = useSelector(state => state.translation.translations);
+    const { userALanguage, userBLanguage } = useSelector(state => state.translation);
+
+    const checkMicrophonePermission = async () => {
+        if (Platform.OS === 'android') {
+            try {
+                const granted = await PermissionsAndroid.request(
+                    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+                    {
+                        title: 'Microphone Permission',
+                        message: 'OmniChat needs access to your microphone',
+                        buttonNeutral: 'Ask Me Later',
+                        buttonNegative: 'Cancel',
+                        buttonPositive: 'OK',
+                    }
+                );
+                return granted === PermissionsAndroid.RESULTS.GRANTED;
+            } catch (err) {
+                console.error('Error checking microphone permission:', err);
+                showToastInfo('Error checking microphone permission:', false);
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // const startListeningWithNoiseSuppressor = useCallback(async () => {
+    //     try {
+    //         const hasPermission = await checkMicrophonePermission();
+    //         if (!hasPermission) {
+    //             showToastInfo('Microphone permission denied', true);
+    //             return;
+    //         }
+
+    //         setError(null);
+    //         setRecordedText('');
+    //         setIsListening(true);
+
+    //         // Reset Voice instance
+    //         await Voice.destroy();
+    //         await Voice.removeAllListeners();
+
+    //         // const noiseSuppressorInitialized = await NoiseSuppressor.initialize(0);
+    //         // if (!noiseSuppressorInitialized) {
+    //         //     throw new Error('Failed to initialize noise suppressor');
+    //         // }
+    //         // await NoiseSuppressor.setEnabled(true);
+
+    //         // Use the correct language based on current user
+    //         const recognitionLanguage = isUser ? userALanguage : userBLanguage;
+    //         const languageCode = getLanguageCode(recognitionLanguage);
+
+    //         console.log('Starting voice recognition in:', languageCode);
+    //         await Voice.start("en-US");
+    //         // await Voice.start(languageCode);
+    //         showToastInfo('Listening...', false);
+
+    //     } catch (error) {
+    //         console.error('Error starting voice recognition:', error);
+    //         showToastInfo('Failed to start listening: ' + error.message, true);
+    //         setError(error.message || 'Failed to start voice recognition');
+    //         setIsListening(false);
+    //         await cleanupResources();
+    //     }
+    // }, [isUser, userALanguage, userBLanguage]); // Add dependencies
+
+    const startListeningWithNoiseSuppressor = useCallback(async () => {
         try {
+            const hasPermission = await checkMicrophonePermission();
+            if (!hasPermission) {
+                showToastInfo('Microphone permission denied', true);
+                return;
+            }
             setError(null);
             setRecordedText('');
             setIsListening(true);
+            // DON'T destroy here - Voice is already initialized
+            console.log('🎙️ Starting voice recognition...');
+            await Voice.start("en-US");
+            console.log('✅ Voice recognition started');
+            showToastInfo('Listening...', false);
 
-            const isVoiceAvailable = await Voice.isAvailable();
-            if (!isVoiceAvailable) {
-                throw new Error('Voice recognition is not available on this device');
-            }
-
-            const noiseSuppressorInitialized = await NoiseSuppressor.initialize(0);
-            if (!noiseSuppressorInitialized) {
-                throw new Error('Failed to initialize noise suppressor');
-            }
-
-            await NoiseSuppressor.setEnabled(true);
-
-            Voice.onSpeechResults = onSpeechResults;
-            Voice.onSpeechEnd = onSpeechEnd;
-            // Voice.onSpeechError = onSpeechError;
-
-            await Voice.start('en-US');
-            startRecorder();
         } catch (error) {
-            console.error('Error in noise suppressor:', error);
-            setError(error.message || 'An error occurred while starting the noise suppressor');
+            console.error('❌ Error starting voice recognition:', error);
+            showToastInfo('Failed to start listening: ' + error.message, true);
+            setError(error.message || 'Failed to start voice recognition');
             setIsListening(false);
-            await cleanupResources();
-            Alert.alert('Error', error.message || 'An error occurred while starting the noise suppressor');
         }
-    };
+    }, []);
 
-    const startRecorder = () => {
+    // Move this outside of effects
+    const onSpeechResults = (event) => {
+        console.log('Speech results received:', event);
+        showToastInfo('Processing speech results...', false);
+
         try {
-            recorder = new Recorder("recording.wav", {
-                bitrate: 256000,
-                channels: 1,
-                sampleRate: 16000,
-                format: "wav",
-                encoder: "pcm"
-            });
-
-            recorder.prepare((err, fsPath) => {
-                if (err) {
-                    showToastInfo("Recorder prepare error: " + err, true);
-                    console.error("Recorder prepare error:", err);
-                } else {
-                    setFilePath(fsPath);
-                    recorder.record();
-                    showToastInfo("Recording started", false);
-                    console.log("📂 Saving to:", fsPath);
-                }
-            });
-
-        } catch (err) {
-            showToastInfo("Error while recording: " + err, true);
-            throw new Error(`Error while recording: ${err}`);
-        }
-    }
-
-    const stopRecorder = () => {
-        try {
-            if (recorder) {
-                recorder.stop((err) => {
-                    if (err) {
-                        showToastInfo("Stop recorder error: " + err, true);
-                        console.error("Stop recorder error:", err);
-                    } else {
-                        showToastInfo("Recording stopped", false);
-                        console.log("✅ Saved:", filePath);
-                    }
-                });
+            if (!event?.value?.[0]) {
+                showToastInfo('No speech detected', true);
+                return;
             }
-        } catch (err) {
-            showToastInfo("Error while stopping recording: " + err, true);
-            throw new Error(`Error while recording: ${err}`);
-        }
-    }
 
-    // First modify onSpeechResults to analyze emotion
-    const onSpeechResults = async (event) => {
-        try {
             const text = event.value[0];
+            if (text.trim() === '') {
+                showToastInfo('Empty speech detected', true);
+                return;
+            }
+
             setRecordedText(text);
             setIsListening(false);
+            showToastInfo('Adding message: ' + text.substring(0, 20) + '...', false);
 
-            showToastInfo('Speech recognized', false);
-
-            // First analyze the emotion
-            const emotionAnalysis = await anayzeAudio();
-
-            // Create new message with emotion data
-            const enrichedText = {
-                text: text,
-                emotion: emotionAnalysis
-            };
-
-            // Use addMessage to handle the state update and smart response generation
-            addMessage(enrichedText);
-
+            addMessage(text);
         } catch (error) {
-            showToastInfo('Error processing speech: ' + (error.message || error), true);
+            console.error('Speech recognition error:', error);
+            showToastInfo('Error processing speech: ' + error.message, true);
             setError('Error processing speech results');
-            Alert.alert('Error', 'Failed to process speech results');
         }
-    };
+    }
 
     const onSpeechEnd = async () => {
         try {
             showToastInfo('Speech ended', false);
             await cleanupResources()
-            stopRecorder();
+            // stopRecorder();
         } catch (error) {
             showToastInfo('Error in speech end: ' + (error.message || error), true);
             console.error('Error in speech end:', error);
@@ -192,16 +187,25 @@ const F2FScreen = () => {
     };
 
     const cleanupResources = async () => {
+        showToastInfo("Cleaning resources", false);
         try {
             if (Voice.isRecognizing) {
                 await Voice.stop();
-
             }
+            await Voice.destroy();
             await NoiseSuppressor.release();
+            // if (recorder) {
+            //     recorder.stop((err) => {
+            //         if (err) {
+            //             console.error('Error stopping recorder:', err);
+            //         }
+            //         recorder = null;
+            //     });
+            // }
             setIsListening(false);
+            setRecordedText('');
         } catch (error) {
-            console.error('Error cleaning up resources:', error);
-            throw error;
+            showToastInfo('Error cleaning up resources:', false);
         }
     };
 
@@ -223,6 +227,7 @@ const F2FScreen = () => {
             // }
         } catch (error) {
             console.error('Error with loudness enhancer:', error);
+            showToastInfo('Error with loudness enhancer:', false);
             Alert.alert('Error', error.message || 'Failed to toggle loudness enhancer');
             setIsLoudnessEnabled(false);
         }
@@ -235,12 +240,23 @@ const F2FScreen = () => {
             await Tts.setDefaultPitch(1.0);
         } catch (error) {
             console.error('Failed to initialize TTS:', error);
+            showToastInfo('Failed to initialize TTS:', false);
         }
+    };
+
+    const getLanguageCode = (language) => {
+        const codes = {
+            'en': 'en-US',
+            'hi': 'hi-IN',
+            'mr': 'mr-IN',
+            'te': 'te-IN'
+        };
+        return codes[language] || 'en-US';
     };
 
     const addMessage = useCallback((textOrObject) => {
         if (!apiKey) {
-            console.log("No API key available - showing modal");
+            // cosole.log("No API key available - showing modal");
             setModalVisible(true);
             return;
         }
@@ -250,38 +266,45 @@ const F2FScreen = () => {
         if (text.trim() === "") return;
 
         setInputText("");
+        const messageId = Date.now().toString();
         const newMessage = {
-            id: messages.length + 1,
+            id: messageId,
             isUser: isUser,
             text: text,
             ...(textOrObject?.emotion && { emotion: textOrObject.emotion })
         };
 
         setMessages(prev => [...prev, newMessage]);
+
+        // Pass isUser to translation function
+        dispatch(translateText(text, messageId, isUser, apiKey));
+
         setIsUser(prev => !prev);
+
         generateSmartresponse(newMessage);
-    }, [isUser, apiKey]);
+    }, [isUser, apiKey, dispatch]);
 
     const generateSmartresponse = useCallback(async (newMessage) => {
         if (!apiKey) {
-            console.log("null apikey", apiKey)
+            // cosole.log("null apikey", apiKey)
             setModalVisible(true);
             return;
         }
 
+        // cosole.log(isUser ? `UserA is adding, generate in ${userBLanguage}`:`UserB is adding, generate in ${userALanguage} `)
         try {
             setIsLoadingResponses(true);
             const genAI = new GoogleGenerativeAI(apiKey);
             const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
             const context = formatHistory([...messages, newMessage]);
+
             const prompt = `
             Here is the recent chat: ${context}
 
             Use only the context above for reference.  
             Do not address users as "UserA" or "UserB" — if needed, extract and use the actual names from the chat context.  
-            "UserA" and "UserB" are placeholders for the code.  
 
-            Suggest exactly 3 natural-sounding replies I could send next to continue the chat positively.  
+            Suggest exactly 3 natural-sounding replies in ${isUser ? getLanguageCode(userBLanguage) : getLanguageCode(userALanguage)} language that I could send next to continue the chat positively.  
 
             Guidelines for each reply:
             - Between 4 and 20 words long.
@@ -289,35 +312,38 @@ const F2FScreen = () => {
             - Match the tone and formality of the conversation.
             - Avoid repeating questions or statements already in the context.
             - No emojis unless they are used in the recent messages.
+            - Must be in ${isUser ? getLanguageCode(userBLanguage) : getLanguageCode(userALanguage)} language.
 
             Respond ONLY as a valid JSON array of 3 strings with no extra text, no markdown, and no explanations.
             `;
+
             const res = await model.generateContent(prompt);
             const result = res.response.text()
                 .replace(/```json/i, "")
                 .replace(/```/g, "")
                 .trim();
 
-            // Ensure we're working with an array of strings
             const parsedResponse = JSON.parse(result);
             const validResponses = parsedResponse.map(item =>
-                // Handle both string and object responses
                 typeof item === 'string' ? item : item.reply || String(item)
             );
 
-            console.log(validResponses);
             setSmartResponses(validResponses);
         } catch (error) {
-            console.error('Smart` response generation error:', error);
+            console.error('Smart response generation error:', error);
+            showToastInfo('Smart response generation error:', false);
             if (error.message.includes('API key')) {
-                console.log("API key error in generation")
+                // cosole.log("API key error in generation")
                 setModalVisible(true);
+            }
+            if (error.message.includes('quota')) {
+                showToastInfo('Gemini API quota exceeded. Please update API key or upgrade plan.', true);
             }
             setSmartResponses([]);
         } finally {
             setIsLoadingResponses(false);
         }
-    }, [apiKey]);
+    }, [apiKey, messages, userALanguage]);
 
     const formatHistory = (history) => {
         let res = "";
@@ -328,163 +354,38 @@ const F2FScreen = () => {
         return res;
     }
 
-    // const audioFile = require('../assets/sad-hindi-song-piano-ambience-383331.mp3');
+    // useFocusEffect(useCallback(() => {
 
-    // const copyAudioFile = async () => {
-    //     try {
-    //         const exists = await RNFS.exists(destinationAudioPath);
-    //         if (!exists) {
-    //             // Get the absolute path to the source file
-    //             const absolutePath = RNFS.MainBundlePath + '/' + sourceAudioPath;
-    //             console.log('Copying from:', absolutePath);
-    //             console.log('Copying to:', destinationAudioPath);
+    //     Voice.onSpeechResults = onSpeechResults;
+    //     Voice.onSpeechEnd = onSpeechEnd;
+    //     // Voice.onSpeechError = onSpeechError;
+    //     toggleLoudnessEnhancer();
 
-    //             await RNFS.copyFile(absolutePath, destinationAudioPath);
-    //             console.log('Audio file copied successfully');
-    //         } else {
-    //             console.log('Audio file already exists in destination');
+
+    //     return () => {
+    //         try {
+    //             cleanupResources();
+    //             Voice.removeAllListeners();
+    //         } catch (error) {
+    //             console.error('Error cleaning up on unmount:', error);
     //         }
-    //     } catch (error) {
-    //         console.error('Error copying audio file:', error);
-    //     }
-    // };
-
-    const getFileSize = async (filePath) => {
-        const stat = await RNFS.stat(filePath);
-        return stat.size / 1024; // Convert to KB
-    };
-
-    const anayzeAudio = async () => {
-        try {
-            if (!filePath) {
-                showToastInfo('No recorded audio file found', true);
-                throw new Error('No recorded audio file found');
-            }
-            showToastInfo('Analyzing audio...', false);
-
-            console.log('Reading recorded audio from:', filePath);
-
-            // Create temp path for processing
-            const tempPath = `${RNFS.CachesDirectoryPath}/temp_audio_${Date.now()}.mp3`;
-
-            // Read the recorded audio file
-            const rawAudioData = await RNFS.readFile(filePath, 'base64');
-            if (!rawAudioData) {
-                showToastInfo('Could not read recorded audio file', true);
-                throw new Error('Could not read recorded audio file');
-            }
-
-            // Write to temp file for compression
-            await RNFS.writeFile(tempPath, rawAudioData, 'base64');
-            showToastInfo('Compressing audio...', false);
-
-            // Compress the audio
-            console.log('Compressing recorded audio...');
-            const compressedPath = await Audio.compress(tempPath, {
-                bitrate: OPTIMAL_CONFIG.compression.bitrate * 1000,
-                samplerate: OPTIMAL_CONFIG.compression.sampleRate,
-                quality: 'medium',
-            });
-
-            // Check compressed file size
-            const fileSize = await getFileSize(compressedPath);
-            console.log('Compressed file size:', fileSize, 'KB');
-
-            // Read the compressed file
-            const compressedAudioData = await RNFS.readFile(compressedPath, 'base64');
-
-            // Clean up temporary files
-            await RNFS.unlink(tempPath);
-            await RNFS.unlink(compressedPath);
-            await RNFS.unlink(filePath); // Clean up original recording
-
-            if (!apiKey) {
-                showToastInfo('API key not found', true);
-                throw new Error('API key not found');
-            }
-
-            showToastInfo('Sending audio for emotion analysis...', false);
-
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: OPTIMAL_CONFIG.model });
-
-            // Add rate limiting delay
-            await new Promise(resolve => setTimeout(resolve, OPTIMAL_CONFIG.rateLimit.delayBetweenRequests));
-
-            const res = await model.generateContent([
-                sERPrompt,
-                {
-                    inlineData: {
-                        data: compressedAudioData,
-                        mimeType: "audio/wav"
-                    }
-                }
-            ]);
-
-            const result = res.response.text()
-                .replace(/```json/i, "")
-                .replace(/```/g, "")
-                .trim();
-
-            const parsedResponse = JSON.parse(result);
-            console.log('Analysis result:', parsedResponse);
-
-            showToastInfo(
-                `Emotion: ${parsedResponse.emoji} ${parsedResponse.emotion} (${Math.round(parsedResponse.confidence * 100)}%)`,
-                false
-            );
-
-            // Clear the filePath state after successful analysis
-            setFilePath("");
-
-            return parsedResponse;
-
-        } catch (error) {
-            showToastInfo("Emotion analysis error: " + (error.message || error), true);
-            console.error("Error while analysing the audio: ", error);
-            // Clean up files even if there's an error
-            try {
-                if (filePath) await RNFS.unlink(filePath);
-                setFilePath("");
-            } catch (cleanupError) {
-                console.error("Error during cleanup:", cleanupError);
-            }
-            return { emotion: "neutral", emoji: "😐", confidence: 0.5 };
-        }
-    }
-
-
-    useFocusEffect(useCallback(() => {
-
-        Voice.onSpeechResults = onSpeechResults;
-        Voice.onSpeechEnd = onSpeechEnd;
-        // Voice.onSpeechError = onSpeechError;
-        toggleLoudnessEnhancer();
-
-
-        return () => {
-            try {
-                cleanupResources();
-                Voice.removeAllListeners();
-            } catch (error) {
-                console.error('Error cleaning up on unmount:', error);
-            }
-        };
-    }, [isUser]));
+    //     };
+    // }, [isUser]));
 
     useFocusEffect(useCallback(() => {
         const initializeApiKey = async () => {
             try {
                 const savedKey = await AsyncStorage.getItem('@gemini_api_key');
                 if (savedKey) {
-                    console.log("Loaded API key on init:", savedKey);
+                    // cosole.log("Loaded API key on init:", savedKey);
                     setApiKey(savedKey);
                 } else {
-                    console.log("No saved key found on init");
+                    // cosole.log("No saved key found on init");
                     setModalVisible(true);
                 }
             } catch (error) {
                 console.error('Error loading API key on init:', error);
+                showToastInfo('Error loading API key on init:', false);
                 setModalVisible(true);
             }
         };
@@ -492,27 +393,58 @@ const F2FScreen = () => {
         initializeApiKey();
     }, []));
 
+    // useFocusEffect(useCallback(() => {
+    //     const lastMessage = messages[messages.length - 1];
+    //     if (lastMessage) {
+    //         const speakMessage = async () => {
+    //             try {
+    //                 if (!isLoudnessEnabled) {
+    //                     await LoudnessEnhancer.initialize(0);
+    //                     await LoudnessEnhancer.setGain(gainValue);
+    //                     setIsLoudnessEnabled(true);
+    //                 }
+
+    //                 // Short delay to ensure loudness enhancer is active
+    //                 await new Promise(resolve => setTimeout(resolve, 500));
+
+    //                 // Initialize TTS and speak the message
+    //                 await initializeTts();
+    //                 await Tts.speak(lastMessage.text);
+    //             } catch (error) {
+    //                 console.error('Error speaking message:', error);
+    //                 Alert.alert('Error', 'Failed to speak message');
+    //             }
+    //         };
+
+    //         speakMessage();
+    //     }
+    //     return () => {
+    //         Tts.stop();
+    //     };
+    // }, [messages]));
+
     useFocusEffect(useCallback(() => {
         const lastMessage = messages[messages.length - 1];
-        if (lastMessage && messages.length % 2 === 0) {
+        // Only speak the partner's messages, not your own
+        if (lastMessage && !lastMessage.isUser) {
             const speakMessage = async () => {
                 try {
-                    // Make sure loudness enhancer is enabled
+                    // Stop any current speech recognition before TTS
+                    if (Voice.isRecognizing) {
+                        await Voice.stop();
+                    }
+
                     if (!isLoudnessEnabled) {
                         await LoudnessEnhancer.initialize(0);
                         await LoudnessEnhancer.setGain(gainValue);
                         setIsLoudnessEnabled(true);
                     }
 
-                    // Short delay to ensure loudness enhancer is active
                     await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Initialize TTS and speak the message
                     await initializeTts();
                     await Tts.speak(lastMessage.text);
                 } catch (error) {
                     console.error('Error speaking message:', error);
-                    Alert.alert('Error', 'Failed to speak message');
                 }
             };
 
@@ -521,7 +453,78 @@ const F2FScreen = () => {
         return () => {
             Tts.stop();
         };
-    }, [messages]));
+    }, [messages, isLoudnessEnabled, gainValue]));
+
+    useFocusEffect(
+        useCallback(() => {
+            const initializeVoice = async () => {
+                try {
+                    console.log('🎙️ Initializing Voice...');
+
+                    // Clean slate
+                    await Voice.destroy();
+                    Voice.removeAllListeners();
+
+                    // Set up all event handlers
+                    Voice.onSpeechStart = () => {
+                        console.log('✅ Speech started');
+                        showToastInfo('Speech started', false);
+                        setIsListening(true);
+                    };
+
+                    Voice.onSpeechRecognized = () => {
+                        console.log('✅ Speech recognized');
+                        showToastInfo('Speech recognized', false);
+                    };
+
+                    Voice.onSpeechPartialResults = (e) => {
+                        console.log('📝 Partial results:', e.value);
+                        // Uncomment to see partial results:
+                        // showToastInfo('Partial: ' + e.value?.[0], false);
+                    };
+
+                    Voice.onSpeechResults = onSpeechResults;
+                    Voice.onSpeechEnd = onSpeechEnd;
+
+                    Voice.onSpeechError = (e) => {
+                        console.error('❌ Speech error:', e);
+                        showToastInfo('Speech error: ' + (e.error?.message || 'Unknown error'), true);
+                        setError(e.error?.message || 'Speech recognition error');
+                        setIsListening(false);
+                    };
+
+                    Voice.onSpeechVolumeChanged = (e) => {
+                        // Uncomment to debug volume detection:
+                        // console.log('🔊 Volume:', e.value);
+                    };
+
+                    console.log('✅ Voice initialized successfully');
+
+                } catch (error) {
+                    console.error('❌ Error initializing Voice:', error);
+                    showToastInfo('Error initializing Voice: ' + error.message, true);
+                }
+            };
+
+            initializeVoice();
+
+            return () => {
+                const cleanup = async () => {
+                    try {
+                        console.log('🧹 Cleaning up Voice...');
+                        if (Voice.isRecognizing) {
+                            await Voice.stop();
+                        }
+                        await Voice.destroy();
+                        Voice.removeAllListeners();
+                    } catch (error) {
+                        console.error('Cleanup error:', error);
+                    }
+                };
+                cleanup();
+            };
+        }, [])
+    );
 
     const toggleResponses = () => {
         setResponseOpen(prev => !prev);
@@ -541,6 +544,7 @@ const F2FScreen = () => {
             setModalVisible(false);
         } catch (error) {
             console.error('Error saving API key:', error);
+            showToastInfo('Error saving API key:', false);
             setApiKeyError('Failed to save API key');
         }
     };
@@ -549,15 +553,16 @@ const F2FScreen = () => {
         try {
             const savedKey = await AsyncStorage.getItem('@gemini_api_key');
             if (savedKey) {
-                console.log("saved key: ", savedKey);
+                // cosole.log("saved key: ", savedKey);
                 setApiKey(savedKey);
             } else {
-                console.log("no saved key")
+                // cosole.log("no saved key")
                 setModalVisible(true);
             }
         } catch (error) {
             console.error('Error loading API key:', error);
-            console.log("error in loading key")
+            showToastInfo('Error loading API key:', false);
+            // cosole.log("error in loading key")
             setModalVisible(true);
         }
     };
@@ -569,7 +574,6 @@ const F2FScreen = () => {
         }
 
         try {
-            // Test the API key with a simple request
             const testAI = new GoogleGenerativeAI(tempApiKey);
             const testModel = testAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
             await testModel.generateContent('test');
@@ -578,21 +582,37 @@ const F2FScreen = () => {
             setTempApiKey('');
         } catch (error) {
             console.error('Invalid API key:', error);
-            setApiKeyError('Invalid API key. Please check and try again.');
+            showToastInfo('Invalid API key:', false);
+            if (error.message.includes('quota')) {
+                showToastInfo('This API key has exceeded its quota. Please use a different key or upgrade plan.', true);
+            }
+            setApiKeyError('Invalid API key or quota exceeded. Please check and try again.');
         }
     };
 
-    // Update the renderMessageBubble function
     const renderMessageBubble = (message, index) => {
+        const translation = translations[message.id];
+        const isUserMessage = message.isUser;
+
         return (
             <View
                 key={message.id}
                 style={[
                     stylesChat.messageBubble,
-                    index % 2 === 0 ? stylesChat.userBubble : stylesChat.botBubble,
+                    isUserMessage ? stylesChat.userBubble : stylesChat.botBubble,
                 ]}
             >
                 <Text style={stylesChat.messageText}>{message.text}</Text>
+                {translation && (
+                    <View style={stylesChat.translationContainer}>
+                        <Text style={stylesChat.translationLabel}>
+                            {isUserMessage ? 'Translated to Partner\'s Language:' : 'Translated to Your Language:'}
+                        </Text>
+                        <Text style={stylesChat.translationText}>
+                            {translation}
+                        </Text>
+                    </View>
+                )}
                 {message.emotion && (
                     <View style={stylesChat.emotionContainer}>
                         <Text style={stylesChat.emotionText}>
@@ -633,140 +653,141 @@ const F2FScreen = () => {
             setIsLoadingSummary(false);
         }
     };
-
+    
     return (
         <LinearGradient
             colors={['rgb(1,114,178)', 'rgb(0,22,69)']}
             style={styles.container}
         >
-            <View style={styles.headerButtons}>
-                <TouchableOpacity
-                    style={styles.settingsButton}
-                    onPress={() => setModalVisible(true)}
-                >
-                    <Icon name="cog" size={24} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.summaryButton}
-                    onPress={generateChatSummary}
-                    disabled={messages.length === 0 || isLoadingSummary}
-                >
-                    <Icon name="file-text-o" size={24} color="#fff" />
-                    {isLoadingSummary && <ActivityIndicator style={styles.summaryLoader} color="#fff" size="small" />}
-                </TouchableOpacity>
-            </View>
-            <ScrollView
-                ref={scrollViewRef}
-                contentContainerStyle={stylesChat.chatContainer}
-                onContentSizeChange={() => scrollViewRef.current.scrollToEnd({ animated: true })}
-            >
-                {messages.map((message, index) => renderMessageBubble(message, index))}
-            </ScrollView>
-
-            <View style={stylesChat.inputContainer}>
-                {smartResponses && (
+            <View style={styles.mainContent}>
+                <View style={styles.headerButtons}>
                     <TouchableOpacity
-                        onPress={toggleResponses}
-                        style={stylesChat.toggleButton}
+                        style={styles.settingsButton}
+                        onPress={() => setModalVisible(true)}
                     >
-                        <Animated.View style={{
-                            transform: [{
-                                rotate: rotateAnimation.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: ['0deg', '180deg']
-                                })
-                            }]
-                        }}>
-                            <Icon
-                                name="chevron-up"
-                                size={20}
-                                color="rgb(1,114,178)"
-                            />
-                        </Animated.View>
+                        <Icon name="cog" size={24} color="#fff" />
                     </TouchableOpacity>
-                )}
-                {smartResponses && responseOpen && (
-                    <>
-                        {isLoadingResponses ? (
-                            <View style={additionalStyles.loadingContainer}>
-                                <ActivityIndicator color="rgb(1,114,178)" />
-                                <Text style={additionalStyles.loadingText}>
-                                    Generating responses...
-                                </Text>
-                            </View>
-                        ) : (
-                            <View style={stylesChat.smartResponsesContainer}>
-                                {Array.isArray(smartResponses) && smartResponses.map((response) => (
-                                    <TouchableOpacity
-                                        key={nanoid()}
-                                        style={stylesChat.smartResponseButton}
-                                        onPress={() => addMessage(String(response))}
-                                    >
-                                        <Text style={stylesChat.smartResponseText}>
-                                            {String(response)}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        )}
-                    </>
-                )}
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <TouchableOpacity
-                        style={stylesChat.micButton}
-                        onPress={isListening ? onSpeechEnd : startListeningWithNoiseSuppressor}
+                        style={styles.summaryButton}
+                        onPress={generateChatSummary}
+                        disabled={messages.length === 0 || isLoadingSummary}
                     >
-                        <Text style={stylesChat.micButtonText}>
-                            {isListening ?
-                                <Icon name="stop-circle" size={30} color="red" /> :
-                                <Icon name="microphone" size={30} color="#rgb(1,114,178)" />
-                            }
-                        </Text>
-                    </TouchableOpacity>
-                    <TextInput
-                        style={stylesChat.input}
-                        placeholder="Type a message..."
-                        placeholderTextColor="rgb(1,114,178)"
-                        value={inputText}
-                        onChangeText={setInputText}
-                    />
-                    <TouchableOpacity
-                        disabled={inputText.trim() === ""}
-                        onPress={() => {
-                            addMessage(inputText)
-                            // anayzeAudio();
-                        }}
-                        style={stylesChat.sendButton}
-                    >
-                        <Text style={stylesChat.sendButtonText}>
-                            <Icon name="send" size={25} color="#fff" />
-                        </Text>
+                        <Icon name="file-text-o" size={24} color="#fff" />
+                        {isLoadingSummary && <ActivityIndicator style={styles.summaryLoader} color="#fff" size="small" />}
                     </TouchableOpacity>
                 </View>
-            </View>
-            <View style={styles.sliderContainer}>
-                <Text style={styles.sliderText}>
-                    {Math.round(gainValue)}dB
-                </Text>
-                <Slider
-                    style={styles.slider}
-                    minimumValue={0}
-                    maximumValue={30}
-                    step={1}
-                    value={gainValue}
-                    minimumTrackTintColor="#FFFFFF"
-                    maximumTrackTintColor="#000000"
-                    thumbTintColor="#FFFFFF"
-                    onValueChange={setGainValue}
-                    onSlidingComplete={async (value) => {
-                        if (isLoudnessEnabled) {
-                            await LoudnessEnhancer.setGain(Math.round(value));
-                        }
-                    }}
-                />
+                <ScrollView
+                    ref={scrollViewRef}
+                    contentContainerStyle={stylesChat.chatContainer}
+                    onContentSizeChange={() => scrollViewRef.current.scrollToEnd({ animated: true })}
+                >
+                    {messages.map((message, index) => renderMessageBubble(message, index))}
+                </ScrollView>
 
-            </View>
+                <View style={styles.sliderContainer}>
+                    <Slider
+                        style={styles.slider}
+                        minimumValue={0}
+                        maximumValue={30}
+                        step={1}
+                        value={gainValue}
+                        minimumTrackTintColor="#FFFFFF"
+                        maximumTrackTintColor="rgba(255,255,255,0.3)"
+                        thumbTintColor="#FFFFFF"
+                        onValueChange={setGainValue}
+                        onSlidingComplete={async (value) => {
+                            if (isLoudnessEnabled) {
+                                await LoudnessEnhancer.setGain(Math.round(value));
+                            }
+                        }}
+                    />
+                    <Text style={styles.sliderText}>
+                        {Math.round(gainValue)}dB
+                    </Text>
+                </View>
 
+                <View style={stylesChat.inputContainer}>
+                    {smartResponses && (
+                        <TouchableOpacity
+                            onPress={toggleResponses}
+                            style={stylesChat.toggleButton}
+                        >
+                            <Animated.View style={{
+                                transform: [{
+                                    rotate: rotateAnimation.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: ['0deg', '180deg']
+                                    })
+                                }]
+                            }}>
+                                <Icon
+                                    name="chevron-up"
+                                    size={20}
+                                    color="rgb(1,114,178)"
+                                />
+                            </Animated.View>
+                        </TouchableOpacity>
+                    )}
+                    {smartResponses && responseOpen && (
+                        <>
+                            {isLoadingResponses ? (
+                                <View style={additionalStyles.loadingContainer}>
+                                    <ActivityIndicator color="rgb(1,114,178)" />
+                                    <Text style={additionalStyles.loadingText}>
+                                        Generating responses...
+                                    </Text>
+                                </View>
+                            ) : (
+                                <View style={stylesChat.smartResponsesContainer}>
+                                    {Array.isArray(smartResponses) && smartResponses.map((response) => (
+                                        <TouchableOpacity
+                                            key={nanoid()}
+                                            style={stylesChat.smartResponseButton}
+                                            onPress={() => addMessage(String(response))}
+                                        >
+                                            <Text style={stylesChat.smartResponseText}>
+                                                {String(response)}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+                        </>
+                    )}
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <TouchableOpacity
+                            style={stylesChat.micButton}
+                            onPress={isListening ? onSpeechEnd : startListeningWithNoiseSuppressor}
+                        >
+                            <Text style={stylesChat.micButtonText}>
+                                {isListening ?
+                                    <Icon name="stop-circle" size={30} color="red" /> :
+                                    <Icon name="microphone" size={30} color="#rgb(1,114,178)" />
+                                }
+                            </Text>
+                        </TouchableOpacity>
+                        <TextInput
+                            style={stylesChat.input}
+                            placeholder="Type a message..."
+                            placeholderTextColor="rgb(1,114,178)"
+                            value={inputText}
+                            onChangeText={setInputText}
+                        />
+                        <TouchableOpacity
+                            disabled={inputText.trim() === ""}
+                            onPress={() => {
+                                addMessage(inputText)
+                                // anayzeAudio();
+                            }}
+                            style={stylesChat.sendButton}
+                        >
+                            <Text style={stylesChat.sendButtonText}>
+                                <Icon name="send" size={25} color="#fff" />
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
             <Modal
                 isVisible={isModalVisible}
                 onBackdropPress={() => apiKey && setModalVisible(false)}
@@ -842,52 +863,31 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    content: {
+    mainContent: {
         flex: 1,
-        padding: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    button: {
-        width: '80%',
-        height: 80,
-        borderRadius: 20,
-        alignItems: 'end',
-        justifyContent: "start",
-        marginVertical: 10,
-        borderColor: '#FFFFFF',
-        borderWidth: 2,
-    },
-    buttonListening: {
-        backgroundColor: 'rgba(255,0,0,0.3)',
-    },
-    buttonEnabled: {
-        backgroundColor: 'rgba(0,255,0,0.3)',
-    },
-    buttonText: {
-        color: '#FFFFFF',
-        fontSize: 24,
-        fontWeight: 'bold',
+        position: 'relative',
     },
     sliderContainer: {
-        width: '80%',
-        marginTop: 20,
-        flexDirection: "row",
-        justifyContent: "flex-end",
-        alignItems: "center",
-        position: "absolute",
-        top: "15%",
-        right: "-33%",
-        transform: [{ rotate: "270deg" }],
+        position: 'absolute',
+        right: 20,
+        top: '50%',
+        transform: [{ translateY: -100 }],
+        height: 200,
+        width: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+    },
+    slider: {
+        width: 200,
+        height: 40,
+        transform: [{ rotate: '-90deg' }],
     },
     sliderText: {
         color: '#FFFFFF',
-        fontSize: 20,
-        transform: [{ rotate: "90deg" }]
-    },
-    slider: {
-        width: '70%',
-        height: 40,
+        fontSize: 16,
+        marginTop: 10,
+        textAlign: 'center',
     },
     modal: {
         justifyContent: 'center',
@@ -1094,7 +1094,24 @@ const stylesChat = StyleSheet.create({
         fontSize: 12,
         color: 'rgb(1,114,178)',
         fontStyle: 'italic',
-    }
+    },
+    translationContainer: {
+        marginTop: 5,
+        paddingTop: 5,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(1,114,178,0.2)',
+    },
+    translationLabel: {
+        fontSize: 12,
+        color: 'rgb(1,114,178)',
+        fontStyle: 'italic',
+        marginBottom: 2,
+    },
+    translationText: {
+        fontSize: 14,
+        color: 'rgb(1,114,178)',
+        fontStyle: 'italic',
+    },
 });
 
 const additionalStyles = StyleSheet.create({
