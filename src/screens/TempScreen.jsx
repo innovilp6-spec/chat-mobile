@@ -21,6 +21,8 @@ import { nanoid } from 'nanoid';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import Modal from "react-native-modal";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useDispatch, useSelector } from 'react-redux';
+import { translateText } from '../store/slices/translationSlice';
 
 const TempScreen = () => {
     const [isListening, setIsListening] = useState(false);
@@ -44,7 +46,11 @@ const TempScreen = () => {
     const slideAnim = useRef(new Animated.Value(-100)).current;
     const [rotateAnimation] = useState(new Animated.Value(1));
 
-    const addMessage = (text) => {
+    const translations = useSelector(state => state.translation.translations);
+    const { userALanguage, userBLanguage } = useSelector(state => state.translation);
+    const dispatch = useDispatch();
+
+    const addMessage = useCallback((text) => {
         if (text.trim() === "") return;
 
         const messageId = Date.now().toString();
@@ -56,9 +62,13 @@ const TempScreen = () => {
 
         setMessages(prev => [...prev, newMessage]);
         setInputText("");
+
+        // Dispatch translation with isUser flag
+        dispatch(translateText(text, messageId, isUser, apiKey));
+
         setIsUser(prev => !prev);
         generateSmartresponse(newMessage);
-    };
+    }, [apiKey, dispatch, isUser]);
 
     const toggleResponses = () => {
         setResponseOpen(prev => !prev);
@@ -70,23 +80,44 @@ const TempScreen = () => {
         }).start();
     };
 
-    const generateSmartresponse = async (newMessage) => {
+    // Add getLanguageCode helper function if not already present
+    const getLanguageCode = (language) => {
+        const codes = {
+            'en': 'en-US',
+            'hi': 'hi-IN',
+            'mr': 'mr-IN',
+            'te': 'te-IN'
+        };
+        return codes[language] || 'en-US';
+    };
+
+    // Update the generateSmartresponse function
+    const generateSmartresponse = useCallback(async (newMessage) => {
+        if (!apiKey) {
+            setModalVisible(true);
+            return;
+        }
+
         try {
             setIsLoadingResponses(true);
             const genAI = new GoogleGenerativeAI(apiKey);
             const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
             const context = messages.map(m => `${m.isUser ? "User" : "Assistant"}: ${m.text}`).join('\n');
 
+            // Determine target language based on who sent the message
+            const targetLanguage = isUser ? userBLanguage : userALanguage;
+
             const prompt = `
-            Recent chat: ${context}
+            Here is the recent chat: ${context}
             Last message: ${newMessage.text}
 
-            Suggest exactly 3 natural-sounding replies that I could send next.
+            Suggest exactly 3 natural-sounding replies in ${targetLanguage} language that I could send next.
             Each reply should be:
-            - Between 4-20 words
+            - Between 4-20 words long
             - Natural and conversational
             - Relevant to the context
             - Different from each other
+            - Must be in ${targetLanguage} language
 
             Respond ONLY with a valid JSON array of 3 strings with no extra text, no markdown, and no explanations.
             `;
@@ -115,7 +146,7 @@ const TempScreen = () => {
         } finally {
             setIsLoadingResponses(false);
         }
-    };
+    }, [apiKey, messages, userALanguage, userBLanguage, isUser]); // Add all dependencies
 
     useFocusEffect(
         useCallback(() => {
@@ -348,15 +379,28 @@ const TempScreen = () => {
     };
 
     const renderMessageBubble = (message) => {
+        const translation = translations[message.id];
+        const isUserMessage = message.isUser;
+
         return (
             <View
                 key={message.id}
                 style={[
                     styles.messageBubble,
-                    message.isUser ? styles.userBubble : styles.botBubble,
+                    isUserMessage ? styles.userBubble : styles.botBubble,
                 ]}
             >
                 <Text style={styles.messageText}>{message.text}</Text>
+                {translation && (
+                    <View style={styles.translationContainer}>
+                        <Text style={styles.translationLabel}>
+                            {isUserMessage ? 'Translated to Partner\'s Language:' : 'Translated to Your Language:'}
+                        </Text>
+                        <Text style={styles.translationText}>
+                            {translation}
+                        </Text>
+                    </View>
+                )}
             </View>
         );
     };
@@ -802,6 +846,23 @@ const styles = StyleSheet.create({
         padding: 12,
         borderRadius: 8,
         alignItems: 'center',
+    },
+    translationContainer: {
+        marginTop: 5,
+        paddingTop: 5,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(1,114,178,0.2)',
+    },
+    translationLabel: {
+        fontSize: 12,
+        color: 'rgb(1,114,178)',
+        fontStyle: 'italic',
+        marginBottom: 2,
+    },
+    translationText: {
+        fontSize: 14,
+        color: 'rgb(1,114,178)',
+        fontStyle: 'italic',
     },
 });
 
