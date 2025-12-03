@@ -31,7 +31,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { translateText } from '../store/slices/translationSlice';
 
 
-const F2FScreen = () => {
+const A2AScreen = () => {
     const [isListening, setIsListening] = useState(false);
     const [isLoudnessEnabled, setIsLoudnessEnabled] = useState(false);
     const [gainValue, setGainValue] = useState(0);
@@ -285,18 +285,32 @@ const F2FScreen = () => {
     }, [isUser, apiKey, dispatch]);
 
     const generateSmartresponse = useCallback(async (newMessage) => {
+        console.log('\n📨 === GENERATING SMART RESPONSES ===');
+        console.log(`   API Key exists: ${!!apiKey}`);
+        console.log(`   API Key length: ${apiKey?.length || 0}`);
+
         if (!apiKey) {
-            // cosole.log("null apikey", apiKey)
+            console.log('❌ No API key available - showing modal');
             setModalVisible(true);
             return;
         }
 
-        // cosole.log(isUser ? `UserA is adding, generate in ${userBLanguage}`:`UserB is adding, generate in ${userALanguage} `)
+        console.log(`   Current user: ${isUser ? 'User A' : 'User B'}`);
+        console.log(`   Generate response in: ${isUser ? userBLanguage : userALanguage}`);
+
         try {
             setIsLoadingResponses(true);
+            console.log('\n1️⃣ Initializing GoogleGenerativeAI...');
             const genAI = new GoogleGenerativeAI(apiKey);
+            console.log('   ✅ GoogleGenerativeAI instance created');
+
+            console.log('2️⃣ Getting model: gemini-2.0-flash');
             const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+            console.log('   ✅ Model instance created');
+
+            console.log('3️⃣ Formatting chat history...');
             const context = formatHistory([...messages, newMessage]);
+            console.log(`   Context length: ${context.length} characters`);
 
             const prompt = `
             Here is the recent chat: ${context}
@@ -329,21 +343,45 @@ const F2FScreen = () => {
             );
 
             setSmartResponses(validResponses);
+            console.log(`   ✅ Generated ${validResponses.length} smart responses`); console.log('\n✨ === SMART RESPONSE GENERATION COMPLETE === \n');
         } catch (error) {
-            console.error('Smart response generation error:', error);
-            showToastInfo('Smart response generation error:', false);
-            if (error.message.includes('API key')) {
-                // cosole.log("API key error in generation")
+            console.error('\n❌ === SMART RESPONSE GENERATION FAILED ===');
+            console.error('Error:', error);
+            console.error('Error type:', error.constructor.name);
+            console.error('Error status:', error.status);
+            console.error('Error message:', error.message);
+
+            const errorMessage = (error.message || '').toLowerCase();
+            const errorString = JSON.stringify(error).toLowerCase();
+
+            console.log('\n🔍 Error classification:');
+            if (errorMessage.includes('api') || errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('unauthorized')) {
+                console.log('   Classification: API KEY ERROR');
+                showToastInfo('API key error - please verify your API key', true);
                 setModalVisible(true);
-            }
-            if (error.message.includes('quota')) {
+            } else if (
+                errorMessage.includes('not enabled') ||
+                errorString.includes('not enabled') ||
+                errorMessage.includes('disabled') ||
+                error.status === 403
+            ) {
+                console.log('   Classification: API NOT ENABLED');
+                showToastInfo('Generative AI API is not enabled. Please enable it in Google Cloud Console.', true);
+                setModalVisible(true);
+            } else if (errorMessage.includes('quota') || errorString.includes('quota') || error.status === 429) {
+                console.log('   Classification: QUOTA EXCEEDED');
                 showToastInfo('Gemini API quota exceeded. Please update API key or upgrade plan.', true);
+            } else {
+                console.log('   Classification: UNKNOWN ERROR');
+                console.log(`   Error message: ${error.message}`);
+                showToastInfo('Smart response generation error: ' + (error.message || 'Unknown error'), false);
             }
             setSmartResponses([]);
+            console.log('\n === ERROR HANDLING COMPLETE === \n');
         } finally {
             setIsLoadingResponses(false);
         }
-    }, [apiKey, messages, userALanguage]);
+    }, [apiKey, messages, userALanguage, userBLanguage]);
 
     const formatHistory = (history) => {
         let res = "";
@@ -356,20 +394,25 @@ const F2FScreen = () => {
 
     useFocusEffect(useCallback(() => {
         const initializeApiKey = async () => {
+            console.log('\n🔑 === INITIALIZING API KEY ON FOCUS ===');
             try {
+                console.log('1️⃣ Retrieving saved API key from AsyncStorage...');
                 const savedKey = await AsyncStorage.getItem('@gemini_api_key');
                 if (savedKey) {
-                    // cosole.log("Loaded API key on init:", savedKey);
+                    console.log(`   ✅ API key found! Length: ${savedKey.length}`);
+                    console.log(`   Key preview: ${savedKey.substring(0, 10)}...${savedKey.substring(savedKey.length - 10)}`);
                     setApiKey(savedKey);
+                    console.log('   ✅ API key set in state');
                 } else {
-                    // cosole.log("No saved key found on init");
+                    console.log('❌ No saved API key found - showing modal');
                     setModalVisible(true);
                 }
             } catch (error) {
-                console.error('Error loading API key on init:', error);
+                console.error('❌ Error loading API key on init:', error);
                 showToastInfo('Error loading API key on init:', false);
                 setModalVisible(true);
             }
+            console.log('\n✨ === API KEY INITIALIZATION COMPLETE ===\n');
         };
 
         initializeApiKey();
@@ -489,6 +532,24 @@ const F2FScreen = () => {
         }).start();
     };
 
+    const validateApiKeyFormat = (key) => {
+        // Google API keys typically start with 'AIza'
+        console.log('🔍 Validating API key format...');
+        console.log(`   Key length: ${key?.length}`);
+        console.log(`   Key starts with AIza: ${key?.startsWith('AIza')}`);
+
+        if (!key || key.length < 20) {
+            console.log('❌ API key validation failed: Key too short');
+            return { valid: false, message: 'API key is too short' };
+        }
+        if (!key.startsWith('AIza')) {
+            console.log('❌ API key validation failed: Does not start with AIza');
+            return { valid: false, message: 'API key should start with "AIza"' };
+        }
+        console.log('✅ API key format validation passed');
+        return { valid: true, message: '' };
+    };
+
     const saveApiKey = async (key) => {
         try {
             await AsyncStorage.setItem('@gemini_api_key', key);
@@ -502,44 +563,99 @@ const F2FScreen = () => {
         }
     };
 
-    const loadApiKey = async () => {
-        try {
-            const savedKey = await AsyncStorage.getItem('@gemini_api_key');
-            if (savedKey) {
-                // cosole.log("saved key: ", savedKey);
-                setApiKey(savedKey);
-            } else {
-                // cosole.log("no saved key")
-                setModalVisible(true);
-            }
-        } catch (error) {
-            console.error('Error loading API key:', error);
-            showToastInfo('Error loading API key:', false);
-            // cosole.log("error in loading key")
-            setModalVisible(true);
-        }
-    };
+
 
     const validateAndSaveKey = async () => {
-        if (!tempApiKey.trim()) {
+        const trimmedKey = tempApiKey.trim();
+        console.log('\n📝 === VALIDATING NEW API KEY === ');
+        console.log(`   Key length: ${trimmedKey.length}`);
+        console.log(`   Key preview: ${trimmedKey.substring(0, 10)}...${trimmedKey.substring(trimmedKey.length - 10)}`);
+
+        if (!trimmedKey) {
+            console.log('❌ Empty API key provided');
             setApiKeyError('API key cannot be empty');
             return;
         }
 
-        try {
-            const testAI = new GoogleGenerativeAI(tempApiKey);
-            const testModel = testAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-            await testModel.generateContent('test');
+        // Validate API key format first
+        console.log('\n1️⃣ Step 1: Validating API key format...');
+        const formatValidation = validateApiKeyFormat(trimmedKey);
+        if (!formatValidation.valid) {
+            console.log(`❌ Format validation failed: ${formatValidation.message}`);
+            setApiKeyError(formatValidation.message);
+            return;
+        }
 
-            await saveApiKey(tempApiKey);
+        try {
+            console.log('\n2️⃣ Step 2: Initializing GoogleGenerativeAI with key...');
+            // Test with a minimal API call to validate the key
+            const testAI = new GoogleGenerativeAI(trimmedKey);
+            console.log('   ✅ GoogleGenerativeAI instance created');
+
+            console.log('\n3️⃣ Step 3: Getting generative model (gemini-2.0-flash)...');
+            const testModel = testAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+            console.log('   ✅ Model instance created');
+
+            console.log('\n4️⃣ Step 4: Testing API call with minimal prompt ("ping")...');
+            const response = await testModel.generateContent('ping');
+            console.log('   ✅ API call successful!');
+            console.log(`   Response status: ${response.response?.status}`);
+            console.log(`   Response text length: ${response.response?.text()?.length}`);
+
+            console.log('\n5️⃣ Step 5: Saving API key to AsyncStorage...');
+            await saveApiKey(trimmedKey);
+            console.log('   ✅ API key saved successfully!');
             setTempApiKey('');
+            console.log('\n✨ === API KEY VALIDATION COMPLETE === \n');
         } catch (error) {
-            console.error('Invalid API key:', error);
-            showToastInfo('Invalid API key:', false);
-            if (error.message.includes('quota')) {
+            console.error('\n❌ === API KEY VALIDATION FAILED ===');
+            console.error('Error object:', error);
+            console.error('Error type:', error.constructor.name);
+            console.error('Error status:', error.status);
+            console.error('Error message:', error.message);
+            console.error('Error details:', {
+                name: error.name,
+                statusText: error.statusText,
+                response: error.response,
+                cause: error.cause,
+                fullJson: JSON.stringify(error, null, 2)
+            });
+
+            const errorMessage = (error.message || '').toLowerCase();
+            const errorString = JSON.stringify(error).toLowerCase();
+
+            console.log('\n🔍 Error classification:');
+            // Handle specific error cases
+            if (error.status === 401 || error.status === 403 || errorMessage.includes('invalid') || errorMessage.includes('unauthorized')) {
+                console.log('   Classification: INVALID API KEY');
+                showToastInfo('Invalid API key:', false);
+                setApiKeyError('Invalid API key. Please check and try again.');
+            } else if (errorMessage.includes('quota') || errorString.includes('quota') || error.status === 429) {
+                console.log('   Classification: QUOTA EXCEEDED');
                 showToastInfo('This API key has exceeded its quota. Please use a different key or upgrade plan.', true);
+                setApiKeyError('API quota exceeded. Please use a different key.');
+            } else if (
+                errorMessage.includes('not enabled') ||
+                errorMessage.includes('disabled') ||
+                errorString.includes('not enabled') ||
+                errorString.includes('generativeai') ||
+                errorMessage.includes('permission denied') ||
+                error.status === 403
+            ) {
+                console.log('   Classification: API NOT ENABLED');
+                showToastInfo('API not enabled. Please enable the Generative AI API.', true);
+                setApiKeyError('Google Generative AI API is not enabled for this project. Enable it at console.cloud.google.com');
+            } else if (errorMessage.includes('not found') || errorString.includes('not found')) {
+                console.log('   Classification: API KEY NOT FOUND');
+                showToastInfo('API key not found or invalid project.', true);
+                setApiKeyError('API key not found or invalid project. Please check your API key.');
+            } else {
+                console.log('   Classification: UNKNOWN ERROR');
+                console.log(`   Error message will be shown: ${error.message}`);
+                showToastInfo('Failed to validate API key:', false);
+                setApiKeyError('Failed to validate API key. ' + (error.message || 'Unknown error'));
             }
-            setApiKeyError('Invalid API key or quota exceeded. Please check and try again.');
+            console.log('\n === ERROR HANDLING COMPLETE === \n');
         }
     };
 
@@ -1161,4 +1277,4 @@ const modalStyles = StyleSheet.create({
 });
 
 
-export default F2FScreen;
+export default A2AScreen;

@@ -101,8 +101,7 @@ const TempScreen = () => {
         try {
             setIsLoadingResponses(true);
             const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
-            const context = messages.map(m => `${m.isUser ? "User" : "Assistant"}: ${m.text}`).join('\n');
+            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); (m => `${m.isUser ? "User" : "Assistant"}: ${m.text}`).join('\n');
 
             // Determine target language based on who sent the message
             const targetLanguage = isUser ? userBLanguage : userALanguage;
@@ -332,7 +331,7 @@ const TempScreen = () => {
 
         try {
             const genAI = new GoogleGenerativeAI(tempApiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
+            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
             await model.generateContent('test');
             await saveApiKey(tempApiKey);
             setTempApiKey('');
@@ -352,7 +351,7 @@ const TempScreen = () => {
         try {
             setIsLoadingSummary(true);
             const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
+            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
             const chatHistory = messages.map(m =>
                 `${m.isUser ? "User" : "Assistant"}: ${m.text}`

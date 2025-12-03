@@ -7,6 +7,8 @@ import { Provider } from 'react-redux';
 import { store, persistor } from './store/centralStore';
 import { PersistGate } from 'redux-persist/integration/react';
 import TempScreen from "./screens/TempScreen";
+import LaunchScreen from './screens/LaunchScreen';
+import A2AScreen from './screens/A2AScreen';
 function App() {
 
   const Stack = createNativeStackNavigator();
@@ -19,10 +21,16 @@ function App() {
             <Stack.Screen name="Home" component={HomeScreen} options={{
               headerShown: false,
             }} />
+            <Stack.Screen name="A2A" component={A2AScreen} options={{
+              headerShown: false,
+            }} />
             <Stack.Screen name="F2F" component={F2FScreen} options={{
               headerShown: false,
             }} />
             <Stack.Screen name="temp" component={TempScreen} options={{
+              headerShown: false,
+            }} />
+            <Stack.Screen name="launch" component={LaunchScreen} options={{
               headerShown: false,
             }} />
           </Stack.Navigator>

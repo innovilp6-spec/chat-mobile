@@ -2,12 +2,14 @@
 // npm install react-native-device-info @react-native-async-storage/async-storage crypto-js
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import DeviceInfo from 'react-native-device-info';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CryptoJS from 'crypto-js';
+import LinearGradient from 'react-native-linear-gradient';
+import Clipboard from '@react-native-clipboard/clipboard';
 
-const LaunchScreen = () => {
+const LaunchScreen = ({ navigation }) => {
     const [licenseKey, setLicenseKey] = useState('');
     const [isLicensed, setIsLicensed] = useState(false);
     const [deviceInfo, setDeviceInfo] = useState('');
@@ -69,8 +71,8 @@ const LaunchScreen = () => {
 
     const copyToClipboard = (text) => {
         // You'll need to install @react-native-clipboard/clipboard for this
-        // Clipboard.setString(text);
-        // cosole.log('Copy to clipboard:', text);
+        Clipboard.setString(text);
+        console.log('Copy to clipboard:', text);
     };
 
     const validateAndStoreLicense = async (encryptedLicense) => {
@@ -86,8 +88,18 @@ const LaunchScreen = () => {
             }
 
             // Validate expiry date
-            const expiryDate = new Date(decryptedData.expiryDate);
+
+            let expiryDate;
+            if (decryptedData.expiryDate)
+            expiryDate = new Date(decryptedData.expiryDate);
+
             const currentDate = new Date();
+
+            console.log(currentDate, expiryDate);
+
+            if(expiryDate===undefined){
+                throw new Error("Invalid license key");
+            }
 
             if (currentDate > expiryDate) {
                 throw new Error('License has expired');
@@ -99,10 +111,12 @@ const LaunchScreen = () => {
             setIsLicensed(true);
             setExpiryDate(expiryDate);
 
-            Alert.alert(
-                'License Activated',
-                `License valid until: ${expiryDate.toDateString()}`
-            );
+            navigation.replace("Home");
+
+            // Alert.alert(
+            //     'License Activated',
+            //     `License valid until: ${expiryDate.toDateString()}`
+            // );
 
         } catch (error) {
             Alert.alert('Invalid License', error.message || 'The license key is invalid');
@@ -112,7 +126,6 @@ const LaunchScreen = () => {
     const checkExistingLicense = async () => {
         try {
             const storedLicense = await AsyncStorage.getItem(LICENSE_STORAGE_KEY);
-
             if (storedLicense) {
                 const decryptedBytes = CryptoJS.AES.decrypt(storedLicense, ENCRYPTION_KEY);
                 const decryptedData = JSON.parse(decryptedBytes.toString(CryptoJS.enc.Utf8));
@@ -123,6 +136,7 @@ const LaunchScreen = () => {
                 if (currentDate <= expiryDate) {
                     setIsLicensed(true);
                     setExpiryDate(expiryDate);
+                    navigation.replace('Home');
                 } else {
                     // License expired
                     await AsyncStorage.removeItem(LICENSE_STORAGE_KEY);
@@ -142,123 +156,200 @@ const LaunchScreen = () => {
 
     if (isLicensed) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.title}>App Licensed</Text>
-                <Text style={styles.info}>
-                    License valid until: {expiryDate?.toDateString()}
-                </Text>
-                <Button title="Clear License (Dev)" onPress={clearLicense} />
+            <LinearGradient colors={['rgb(1,114,178)', 'rgb(0,22,69)']} style={styles.container}>
+                <View style={styles.content}>
+                    <View style={styles.logoContainer}>
+                        <Text style={styles.title}>App Licensed</Text>
+                        <Text style={styles.info}>
+                            License valid until: {expiryDate?.toDateString()}
+                        </Text>
+                    </View>
 
-                {/* Your main app content goes here */}
-                <Text style={styles.content}>
-                    🎉 Welcome to the licensed application!
-                </Text>
-            </View>
+                    {/* Dev button with gradient */}
+                    <TouchableOpacity
+                        style={styles.button}
+                        onPress={clearLicense}
+                    >
+                        <LinearGradient
+                            colors={['#4facfe', 'rgb(1,114,178)']}
+                            style={styles.gradientButton}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                        >
+                            <Text style={styles.buttonText}>Clear License (Dev)</Text>
+                        </LinearGradient>
+                    </TouchableOpacity>
+                </View>
+            </LinearGradient>
         );
     }
 
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>License Required</Text>
-
-            <Button
-                title="Generate License Request"
-                onPress={generateInitialLicenseRequest}
-            />
-
-            <Text style={styles.label}>Enter License Key:</Text>
-            <TextInput
-                style={styles.input}
-                value={licenseKey}
-                onChangeText={setLicenseKey}
-                placeholder="Paste your license key here"
-                multiline
-            />
-
-            <Button
-                title="Activate License"
-                onPress={() => validateAndStoreLicense(licenseKey)}
-                disabled={!licenseKey.trim()}
-            />
-
-            {deviceInfo && (
-                <View style={styles.deviceInfoContainer}>
-                    <Text style={styles.label}>Your Device Request:</Text>
-                    <Text style={styles.deviceInfo}>{deviceInfo}</Text>
+        <LinearGradient colors={['rgb(1,114,178)', 'rgb(0,22,69)']} style={styles.container}>
+            <View style={styles.content}>
+                <View style={styles.logoContainer}>
+                    <Text style={styles.title}>License Required</Text>
                 </View>
-            )}
-        </View>
+
+                <TouchableOpacity
+                    style={styles.button}
+                    onPress={generateInitialLicenseRequest}
+                >
+                    <LinearGradient
+                        colors={['#4facfe', 'rgb(1,114,178)']}
+                        style={styles.gradientButton}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                    >
+                        <Text style={styles.buttonText}>Generate License Request</Text>
+                    </LinearGradient>
+                </TouchableOpacity>
+
+                <Text style={styles.label}>Enter License Key:</Text>
+                <TextInput
+                    style={styles.input}
+                    value={licenseKey}
+                    onChangeText={setLicenseKey}
+                    placeholder="Paste your license key here"
+                    placeholderTextColor="#rgba(255,255,255,0.7)"
+                    multiline
+                />
+
+                <TouchableOpacity
+                    style={[styles.button, !licenseKey.trim() && styles.buttonDisabled]}
+                    onPress={() => validateAndStoreLicense(licenseKey)}
+                    disabled={!licenseKey.trim()}
+                >
+                    <LinearGradient
+                        colors={['#4facfe', 'rgb(1,114,178)']}
+                        style={styles.gradientButton}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                    >
+                        <Text style={styles.buttonText}>Activate License</Text>
+                    </LinearGradient>
+                </TouchableOpacity>
+
+                {deviceInfo && (
+                    <View style={styles.deviceInfoContainer}>
+                        <Text style={styles.label}>Your Device Request:</Text>
+                        <Text style={styles.deviceInfo}>{deviceInfo}</Text>
+                        <TouchableOpacity
+                            style={[styles.button, styles.copyButton]}
+                            onPress={() => copyToClipboard(deviceInfo)}
+                        >
+                            <LinearGradient
+                                colors={['#4facfe', 'rgb(1,114,178)']}
+                                style={styles.gradientButton}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                            >
+                                <Text style={styles.buttonText}>Copy Request Key</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>
+        </LinearGradient>
     );
 };
 
-// Dev team license generation utility (for server-side or dev tools)
-const generateLicenseForDevice = (deviceId, expiryDate) => {
-    const ENCRYPTION_KEY = 'your-secret-key-here-make-it-complex'; // Same as in app
 
-    const licenseData = {
-        deviceId: deviceId,
-        expiryDate: expiryDate, // Format: YYYY-MM-DD
-        issuedDate: new Date().toISOString().split('T')[0],
-        status: 'active'
-    };
-
-    const encryptedLicense = CryptoJS.AES.encrypt(
-        JSON.stringify(licenseData),
-        ENCRYPTION_KEY
-    ).toString();
-
-    return encryptedLicense;
-};
-
-// Example usage for dev team:
-// const license = generateLicenseForDevice('device123_Samsung_Galaxy', '2024-12-31');
-// // cosole.log('Generated license:', license);
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+    },
+    content: {
+        flex: 1,
         padding: 20,
         justifyContent: 'center',
+        alignItems: 'center',
+    },
+    logoContainer: {
+        alignItems: 'center',
+        marginBottom: 30,
     },
     title: {
-        fontSize: 24,
+        fontSize: 32,
         fontWeight: 'bold',
-        textAlign: 'center',
-        marginBottom: 20,
+        color: '#fff',
+        marginBottom: 10,
+        textShadowColor: 'rgba(0, 0, 0, 0.2)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 3,
     },
     label: {
-        fontSize: 16,
+        fontSize: 18,
         marginTop: 20,
         marginBottom: 10,
+        color: '#fff',
+        fontWeight: '600',
+        alignSelf: 'flex-start',
     },
     input: {
         borderWidth: 1,
-        borderColor: '#ccc',
-        padding: 10,
-        borderRadius: 5,
+        borderColor: '#fff',
+        padding: 15,
+        borderRadius: 10,
         minHeight: 100,
         textAlignVertical: 'top',
+        width: '100%',
+        color: '#fff',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        marginBottom: 20,
     },
     info: {
         fontSize: 16,
+        color: '#fff',
         textAlign: 'center',
         marginBottom: 20,
     },
-    content: {
-        fontSize: 18,
-        textAlign: 'center',
-        marginTop: 30,
-    },
     deviceInfoContainer: {
         marginTop: 20,
-        padding: 10,
-        backgroundColor: '#f0f0f0',
-        borderRadius: 5,
+        padding: 15,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 10,
+        width: '100%',
     },
     deviceInfo: {
         fontSize: 12,
         fontFamily: 'monospace',
+        color: '#fff',
+        marginBottom: 10,
     },
+    button: {
+        width: '100%',
+        height: 50,
+        borderRadius: 25,
+        overflow: 'hidden',
+        marginVertical: 10,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    buttonDisabled: {
+        opacity: 0.5,
+    },
+    gradientButton: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    buttonText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+        textShadowColor: 'rgba(0, 0, 0, 0.2)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 3,
+    },
+    copyButton: {
+        marginTop: 10,
+    }
 });
 
 export default LaunchScreen;

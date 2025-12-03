@@ -3,7 +3,6 @@ import LinearGradient from "react-native-linear-gradient";
 import { Picker } from '@react-native-picker/picker';
 import { useDispatch, useSelector } from 'react-redux';
 import { setUserALanguage, setUserBLanguage } from '../store/slices/translationSlice';
-import { AccessibilityInfo } from 'react-native';
 
 const LANGUAGES = [
     { label: 'English', value: 'en' },
@@ -85,7 +84,7 @@ export default function HomeScreen({ navigation }) {
                 {/* Chat Button */}
                 <TouchableOpacity
                     style={styles.chatButton}
-                    onPress={() => navigation.navigate("temp")}
+                    onPress={() => navigation.navigate("A2A")}
                     accessibilityLabel="Start in-person chat"
                     accessibilityHint="Opens the face to face conversation screen"
                 >
