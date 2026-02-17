@@ -1,79 +1,130 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# TCS Sankara (OmniChat)
 
-# Getting Started
+## 1. Project Introduction
+**TCS Sankara** (internally referenced as **OmniChat**) is a professional React Native Android application designed to facilitate seamless communication by breaking down language and hearing barriers. 
 
->**Note**: Make sure you have completed the [React Native - Environment Setup](https://reactnative.dev/docs/environment-setup) instructions till "Creating a new application" step, before proceeding.
+The application serves as an assistive tool for in-person conversations, particularly for users with hearing impairments or those communicating across different languages. By combining real-time speech processing with advanced generative AI, it enables two distinct interaction modes:
+- **Audio-to-Audio (A2A)**: Real-time multilingual conversation hub.
+- **Face-to-Face (F2F)**: Shared screen interaction for in-person dialogue.
 
-## Step 1: Start the Metro Server
+### Core Capabilities
+- **Noise Suppression**: Native OS-level filtering to clean input signals in real-time.
+- **Voice Amplification**: A professional-grade loudness boost providing up to **30dB** of gain.
+- **LLM Processing**: Integration with **Google Gemini 2.0 Flash** for translation, smart response generation, speech emotion recognition (SER), and conversation summarization.
 
-First, you will need to start **Metro**, the JavaScript _bundler_ that ships _with_ React Native.
+---
 
-To start Metro, run the following command from the _root_ of your React Native project:
+## 2. High-Level Runtime Flow
+1. **Audio Capture**: Microphone input is captured via `@react-native-voice/voice` (for real-time STT) or `@react-native-community/audio-toolkit` (for recording-based analysis).
+2. **Native Processing Pipeline**: Audio data is processed at the HAL level through the `NoiseSuppressor` and `LoudnessEnhancer` Kotlin modules.
+3. **LLM Text Processing**: Transcribed text or compressed audio data is sent to the Gemini API for contextual analysis or translation.
+4. **Redux State Updates**: Results (translations, smart response arrays) are dispatched to the Redux store and persisted where necessary.
+5. **UI Output**: The final processed/translated text is rendered in the chat UI and spoken back to the user via `react-native-tts`.
 
+---
+
+## 3. Architecture Overview
+### Project Structure
+- **/android**: Contains Kotlin-based native bridge modules for hardware-level audio effects.
+- **/src**: Root of JavaScript source code, containing `/screens`, `/store` (Redux), and `/utils`.
+- **/docs**: Detailed technical documentation for specific subsystems.
+
+### App Initialization
+- **Hydration**: The app uses `redux-persist` to restore language preferences and conversation metadata from `AsyncStorage`.
+- **Credential Check**: On focus, conversation screens verify the existence of a Gemini API key in local storage.
+
+### Navigation & State
+- **Navigation**: Uses `@react-navigation/native-stack` for a lightweight, performant stack.
+- **State Management**: Centralized store using **Redux Toolkit** with a whitelisted `translation` slice for persistent data storage across app restarts.
+- **Async Handling**: Side effects and API interactions are orchestrated using **Redux Thunk**.
+
+---
+
+## 4. Audio Processing Pipeline
+### Native Mechanisms
+- **Noise Suppression**: Wraps the Android `android.media.audiofx.NoiseSuppressor`. It is initialized on the default capture session (`audioSessionId: 0`) and requires explicit hardware support check.
+- **Voice Amplification**: Implements a dedicated `LoudnessEnhancer` module. It converts user-selected dB gain into millibels and applies it to the active audio session.
+- **Routing**: Synthesized TTS output is routed through the same amplified audio session, ensuring the user hears the assistant clearly.
+
+### Technical Implementation
+- **Threading**: Native audio transformations occur in high-priority HAL media threads to ensure sub-20ms latency.
+- **Failure Handling**: If native modules fail to initialize or aren't supported by the device OEM, the app gracefully degrades and allows the conversation to continue without enhancement.
+
+---
+
+## 5. LLM Integration
+### Request & Response
+- **Construction**: Payloads are built using the `GoogleGenerativeAI` SDK. History is serialized into a plain-text chat format for contextual smart responses.
+- **Processing**: Responses are stripped of markdown decorators using regex and parsed into JSON arrays for UI rendering.
+- **Audio Analysis**: Multimodal analysis uses compressed audio payloads (Sample Rate: 22050Hz, Bitrate: 64kbps) to minimize bandwidth.
+
+### Reliability & Security
+- **Error Handling**: Classified handling for 401 (Invalid Key), 429 (Quota Exceeded), and general network failures.
+- **Rate Limiting**: Implementation of a 5000ms cool-down period between analysis requests to comply with free-tier API quotas.
+- **Security**: API keys are stored locally in `AsyncStorage`. No backend servers are involved; all AI traffic is client-to-Google over HTTPS.
+
+---
+
+## 6. State Management
+### Store Structure
+- **Translation Slice**: Responsibilty for `userALanguage`, `userBLanguage`, and a `translations` lookup table (ID-to-string mapping).
+- **Persistence**: Whitelisted `translation` slice ensures user preferences survive app reboots.
+- **Action Flow**: `translateText` Thunk -> Gemini API -> `SET_TRANSLATION` Dispatch -> Redux Update -> `useSelector` Re-render.
+
+---
+
+## 7. Permissions & Android Configuration
+### Declared Permissions
+- `android.permission.RECORD_AUDIO`: Voice capture.
+- `android.permission.MODIFY_AUDIO_SETTINGS`: Required for native audio effects control.
+- `android.permission.INTERNET`: Gemini API communication.
+- `android.permission.QUERY_ALL_PACKAGES`: TTS service discovery.
+
+### Platform Considerations
+- **Android 11+**: Includes required `<queries>` blocks for TTS service visibility.
+- **Runtime Flow**: Permissions are requested explicitly through `PermissionsAndroid` when entering interaction screens.
+
+---
+
+## 8. Build & Setup
+### Requirements
+- **Node**: >= 18.0
+- **Java**: 17 (recommended)
+- **Android SDK**: Compile SDK 34, Build Tools 34.0.0, Min SDK 23.
+
+### Dependency Installation
 ```bash
-# using npm
-npm start
-
-# OR using Yarn
-yarn start
+npm install
 ```
 
-## Step 2: Start your Application
-
-Let Metro Bundler run in its _own_ terminal. Open a _new_ terminal from the _root_ of your React Native project. Run the following command to start your _Android_ or _iOS_ app:
-
-### For Android
-
+### Development Build
 ```bash
-# using npm
-npm run android
-
-# OR using Yarn
-yarn android
+npx react-native start
+npx react-native run-android
 ```
 
-### For iOS
-
+### Release Generation
+1. Configure `your_key_name.keystore` in the `android/app` directory.
+2. Run build command:
 ```bash
-# using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+cd android
+./gradlew assembleRelease
 ```
+3. **Artifact Output**: `android/app/build/outputs/apk/release/app-release.apk`
 
-If everything is set up _correctly_, you should see your new app running in your _Android Emulator_ or _iOS Simulator_ shortly provided you have set up your emulator/simulator correctly.
+---
 
-This is one way to run your app — you can also run it directly from within Android Studio and Xcode respectively.
+## 9. Testing Checklist
+- [ ] **Microphone**: Verify `PermissionsAndroid` rationale appears and recording starts.
+- [ ] **Noise Suppression**: Validate clean audio output in noisy environments.
+- [ ] **Amplification**: Confirm gain increments (0-30dB) affect the TTS volume.
+- [ ] **LLM Connectivity**: Test translation with active internet; verify "Quota Exceeded" handling.
+- [ ] **Offline Behavior**: Ensure amplification and UI persistence work without internet.
 
-## Step 3: Modifying your App
+---
 
-Now that you have successfully run the app, let's modify it.
-
-1. Open `App.tsx` in your text editor of choice and edit some lines.
-2. For **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Developer Menu** (<kbd>Ctrl</kbd> + <kbd>M</kbd> (on Window and Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (on macOS)) to see your changes!
-
-   For **iOS**: Hit <kbd>Cmd ⌘</kbd> + <kbd>R</kbd> in your iOS Simulator to reload the app and see your changes!
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [Introduction to React Native](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you can't get this to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+## 10. Technical Constraints & Stability Notes
+- **Latency**: STT/LLM pipeline is subject to network speeds; typical round-trip for smart responses is 1.5s - 3s.
+- **Hardware Variation**: `NoiseSuppressor` and `LoudnessEnhancer` availability is hardware-dependent; non-supported devices will defaults to raw audio.
+- **Security**: Store the API key in a secure manner; currently stored in `AsyncStorage` (non-encrypted).
+- **Rate Limits**: Free-tier Gemini keys are limited to 15-60 RPM depending on the model; avoid rapid clicking of analysis triggers.
