@@ -43,12 +43,10 @@ const F2FScreen = () => {
     const [isSummaryModalVisible, setSummaryModalVisible] = useState(false);
     const [summaryText, setSummaryText] = useState('');
     const [isLoadingSummary, setIsLoadingSummary] = useState(false);
-    const scrollViewRef = useRef(null);
-    const [isUser, setIsUser] = useState(true);
-    const [messages, setMessages] = useState([]);
     const [responseOpen, setResponseOpen] = useState(true);
     const [rotateAnimation] = useState(new Animated.Value(1));
-    // API wali states
+
+    // API and Redux Hooks
     const [apiKey, setApiKey] = useState(null);
     const [isModalVisible, setModalVisible] = useState(false);
     const [tempApiKey, setTempApiKey] = useState('');
@@ -58,6 +56,9 @@ const F2FScreen = () => {
     const translations = useSelector(state => state.translation.translations);
     const { userALanguage, userBLanguage } = useSelector(state => state.translation);
 
+    /**
+     * Request microphone permissions.
+     */
     const checkMicrophonePermission = async () => {
         if (Platform.OS === 'android') {
             try {

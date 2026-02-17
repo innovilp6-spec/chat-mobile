@@ -1,12 +1,14 @@
 import NetInfo from "@react-native-community/netinfo";
 
+/**
+ * Utility to check the current network state.
+ * Returns true if the device has an active and reachable internet connection.
+ */
 export const checkConnection = async () => {
-    // return true;
-
-    const state= await NetInfo.fetch();
+    const state = await NetInfo.fetch();
     return state.isConnected && state.isInternetReachable;
-}
+};
 
- 
- 
- 
+
+
+

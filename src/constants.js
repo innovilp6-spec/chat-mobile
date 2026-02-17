@@ -1,4 +1,6 @@
-
+/**
+ * UI Text constants for multilingual support on the Home screen.
+ */
 export const AppTexts = new Map();
 
 AppTexts.set("English", {
@@ -25,6 +27,9 @@ AppTexts.set("Hindi", {
     }
 })
 
+/**
+ * Core operation modes for the application's computer vision/audio features.
+ */
 export const OPERATIONS = {
     default: "none",
     know_surroundings: "know surroundings",
@@ -34,6 +39,9 @@ export const OPERATIONS = {
     find: "find",
 };
 
+/**
+ * Specific sub-tasks for each operation mode.
+ */
 export const SUB_OPERATIONS = {
     default: "none",
     browse_file: "browse_file",
@@ -47,8 +55,14 @@ export const SUB_OPERATIONS = {
     currency: "currency",
 };
 
+/**
+ * List of languages currently supported for translation and STT.
+ */
 export const supportedLangugaes = new Set(["hindi", "marathi", "bengali", "english", "gujarati", "punjabi", "tamil", "telugu", "malayalam", "bhojpuri"]);
 
+/**
+ * Mapping of language names to ISO language codes.
+ */
 export const languageMap = new Map();
 languageMap.set("hindi", "hi");
 languageMap.set("marathi", "mr");
@@ -61,7 +75,9 @@ languageMap.set("telugu", "te");
 languageMap.set("malayalam", "ml");
 languageMap.set("bhojpuri", "bho");
 
-
+/**
+ * Registered screen names for the React Navigation stack.
+ */
 export const SCREENS = {
     home: "Home",
     camera: "Camera",
@@ -76,7 +92,9 @@ export const SCREENS = {
     chat: "Chat"
 }
 
-
+/**
+ * Regex patterns for input validation.
+ */
 export const REGEX = {
     special_characters: '^[^\/\\?%*:|"<>\]+$',
     no_leading_dots: '^[^.].*$',

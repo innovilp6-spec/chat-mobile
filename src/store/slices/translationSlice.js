@@ -1,20 +1,30 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { showToastInfo } from '../../utils/toasts';
 
+// Action types
 const SET_USER_A_LANGUAGE = "SET_USER_A_LANGUAGE";
 const SET_USER_B_LANGUAGE = "SET_USER_B_LANGUAGE";
 const SET_TRANSLATION = "SET_TRANSLATION";
 
+/**
+ * Action creator to set the language for User A.
+ */
 export const setUserALanguage = (language) => ({
     type: SET_USER_A_LANGUAGE,
     payload: language,
 });
 
+/**
+ * Action creator to set the language for User B.
+ */
 export const setUserBLanguage = (language) => ({
     type: SET_USER_B_LANGUAGE,
     payload: language,
 });
 
+/**
+ * Action creator to store a translation for a specific message ID.
+ */
 export const setTranslation = (messageId, translation) => ({
     type: SET_TRANSLATION,
     payload: { messageId, translation },
@@ -23,9 +33,16 @@ export const setTranslation = (messageId, translation) => ({
 const initialState = {
     userALanguage: "en",
     userBLanguage: "en",
-    translations: {},
+    translations: {}, // Maps messageId -> translatedText
 };
 
+/**
+ * Asynchronous thunk to translate text using the Google Gemini API.
+ * @param {string} text - The source text to translate.
+ * @param {string} messageId - The unique ID of the message.
+ * @param {boolean} isUserA - Whether the source text is from User A.
+ * @param {string} apiKey - The Gemini API key.
+ */
 export const translateText = (text, messageId, isUserA, apiKey) => {
     return async (dispatch, getState) => {
         try {
@@ -33,6 +50,7 @@ export const translateText = (text, messageId, isUserA, apiKey) => {
             const targetLanguage = isUserA ? userBLanguage : userALanguage;
             const sourceLanguage = isUserA ? userALanguage : userBLanguage;
 
+            // Avoid redundant translation if languages are identical
             if (sourceLanguage === targetLanguage) return;
 
             const genAI = new GoogleGenerativeAI(apiKey);
@@ -54,13 +72,11 @@ export const translateText = (text, messageId, isUserA, apiKey) => {
             }
 
             const translation = result.response.text().trim();
-            // cosole.log(translation);
             dispatch(setTranslation(messageId, translation));
 
         } catch (error) {
             console.error('Translation error:', error);
 
-            // Handle different error cases
             if (error.message?.includes('API_KEY_INVALID')) {
                 showToastInfo('Invalid API key. Please check your settings.', true);
             } else if (error.message?.includes('quota')) {
@@ -71,12 +87,15 @@ export const translateText = (text, messageId, isUserA, apiKey) => {
                 showToastInfo('Translation failed. Please try again.', true);
             }
 
-            // Store error in translations to show in UI
+            // Mark translation as failed in the store to inform the UI
             dispatch(setTranslation(messageId, '(Translation failed)'));
         }
     };
 };
 
+/**
+ * Reducer for managing translation state.
+ */
 const translationReducer = (state = initialState, action) => {
     switch (action.type) {
         case SET_USER_A_LANGUAGE:

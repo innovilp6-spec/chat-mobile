@@ -31,7 +31,13 @@ import { useDispatch, useSelector } from 'react-redux';
 import { translateText } from '../store/slices/translationSlice';
 
 
+/**
+ * A2AScreen Component.
+ * Implements the Audio-to-Audio conversation logic, including speech recognition,
+ * translation, smart responses, and native audio effects (Noise Suppression / Loudness).
+ */
 const A2AScreen = () => {
+    // UI and Logic States
     const [isListening, setIsListening] = useState(false);
     const [isLoudnessEnabled, setIsLoudnessEnabled] = useState(false);
     const [gainValue, setGainValue] = useState(0);
@@ -44,20 +50,26 @@ const A2AScreen = () => {
     const [summaryText, setSummaryText] = useState('');
     const [isLoadingSummary, setIsLoadingSummary] = useState(false);
     const scrollViewRef = useRef(null);
-    const [isUser, setIsUser] = useState(true);
+    const [isUser, setIsUser] = useState(true); // Toggle between User A and User B
     const [messages, setMessages] = useState([]);
     const [responseOpen, setResponseOpen] = useState(true);
     const [rotateAnimation] = useState(new Animated.Value(1));
-    // API wali states
+
+    // API and Configuration States
     const [apiKey, setApiKey] = useState(null);
-    const [isModalVisible, setModalVisible] = useState(false);
+    const [isModalVisible, setModalVisible] = useState(false); // API Key input modal
     const [tempApiKey, setTempApiKey] = useState('');
     const [apiKeyError, setApiKeyError] = useState(null);
     const [filePath, setFilePath] = useState("");
+
+    // Global State Selectors
     const dispatch = useDispatch();
     const translations = useSelector(state => state.translation.translations);
     const { userALanguage, userBLanguage } = useSelector(state => state.translation);
 
+    /**
+     * Request microphone permissions from the Android OS.
+     */
     const checkMicrophonePermission = async () => {
         if (Platform.OS === 'android') {
             try {
